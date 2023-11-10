@@ -1,0 +1,7 @@
+Requirements!! 
+
+- A POST endpoint that will accept an image (png for right now) and store it in memory. 
+- A GET endpoint that will retrieve all images from what is stored in memory. 
+
+Tooling: 
+- Chi (A lightweight router for HTTP services.)
