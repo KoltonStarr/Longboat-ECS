@@ -1,54 +1,60 @@
 package main
 
 import (
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
-
+	// What does this native package do?
 	"context"
-	// "log"
-	// "github.com/aws/aws-sdk-go-v2/aws"
+	"fmt"
+	"net/http"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	// "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/fatih/color"
+	"github.com/go-chi/chi/v5"
 )
 
-// png, jpg
-// var images = []image.Image{}
+// TODO: Figure out if the upload logic works with other image formats.
+// TODO: Implement a GET route that will get a single image from the bucket only if the request has the exact filename.
+// TODO: Implements tests!
+// TODO: Figure out a better way to provide the s3 client with configuration credentials so that this server can run in a container and have all it needs.
+//       I might need to configure an IAM role for the application itself and give it access to only S3.
+// TODO: Add proper error handling and response handling.
 
-const uploadDir = "./image-uploads"
+var MAX_BYTE_SIZE = int64(10 << 20)
 
 func main() {
-	// Load the Shared AWS Configuration (~/.aws/config)
-	cfg, _ := config.LoadDefaultConfig(context.TODO())
-	fmt.Println(cfg.Credentials)
 	router := chi.NewRouter()
-	router.Use(middleware.Logger)
-	router.Get("/images", getImages)
+	router.Use(LogPretty)
 	router.Post("/images", imageUpload)
 
-	fmt.Println("Server is running on localhost 3000!")
+	fmt.Println("Server is running on port 3000")
 	http.ListenAndServe(":3000", router)
 }
 
-func getImages(writer http.ResponseWriter, reader *http.Request) {
-	fmt.Println("Hello!!!")
-	byteData := []byte("Hello World!")
-	writer.Write(byteData)
-}
+func imageUpload(responseWriter http.ResponseWriter, request *http.Request) {
+	err := request.ParseMultipartForm(MAX_BYTE_SIZE)
 
-func imageUpload(writer http.ResponseWriter, reader *http.Request) {
-	reader.ParseMultipartForm(10 << 20)
-	file, handler, _ := reader.FormFile("file")
+	// Wuh oh file too big!
+	if err != nil {
+		color.RedString(err.Error())
+	}
+
+	// What IS "file" here?
+	file, partHeader, _ := request.FormFile("file")
+	fileName := partHeader.Filename
 	defer file.Close()
 
-	fileName := filepath.Join(uploadDir, handler.Filename)
-	newFile, _ := os.Create(fileName)
-	defer newFile.Close()
+	// Load the Shared AWS Configuration (~/.aws/config)
+	cfg, _ := config.LoadDefaultConfig(context.TODO())
+	client := s3.NewFromConfig(cfg)
 
-	io.Copy(newFile, file)
+	_, s3Err := client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket: aws.String("hwot-bayrn"),
+		Key:    aws.String(fileName),
+		Body:   file,
+	})
+
+	if s3Err != nil {
+		fmt.Println(err.Error())
+	}
 }
