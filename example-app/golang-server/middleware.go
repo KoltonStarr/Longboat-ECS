@@ -16,7 +16,7 @@ func LogPretty(next http.Handler) http.Handler {
 		fmt.Println("URL Being Requested:", color.HiBlueString("http://"+request.Host+request.URL.Path))
 		fmt.Println("Protocol In Use:", color.HiBlueString(request.Proto))
 		fmt.Println("Request Body Byte Size:", color.HiWhiteString(fmt.Sprint(request.ContentLength)))
-		fmt.Println("Request from IP Address:", color.HiMagentaString(request.RemoteAddr))
+		fmt.Println("Request from IP Address:", color.HiMagentaString(request.RemoteAddr+"\n\n"))
 
 		// Call the next handler in the chain
 		next.ServeHTTP(w, request)

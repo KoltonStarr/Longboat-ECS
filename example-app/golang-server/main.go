@@ -1,9 +1,18 @@
 package main
 
+/*
+Note:
+
+From what I have read in the AWS docs I might not have to do anything at all in order for my client S3 instantiation to work.
+The LoadDefaulConfig function is apparently smart enough to use the IAM role of the ECS task that is running my container.
+The only thing I need to confirm is that the IAM role of the task has the right permissions to actually write to my bucket.
+*/
+
 import (
 	// What does this native package do?
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -13,48 +22,73 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// TODO: Figure out if the upload logic works with other image formats.
 // TODO: Implement a GET route that will get a single image from the bucket only if the request has the exact filename.
 // TODO: Implements tests!
-// TODO: Figure out a better way to provide the s3 client with configuration credentials so that this server can run in a container and have all it needs.
-//       I might need to configure an IAM role for the application itself and give it access to only S3.
-// TODO: Add proper error handling and response handling.
+// TODO: Figure out how to do all of this with CloudFormation.
+// TODO: Turn this into an HTTPS server and figure out how that works.
+// TODO: Make it so that I can dynamically look for all file keys and parse each file without explicitly hard-coding file keys.
 
 var MAX_BYTE_SIZE = int64(10 << 20)
+var PORT = "8080"
 
 func main() {
 	router := chi.NewRouter()
 	router.Use(LogPretty)
 	router.Post("/images", imageUpload)
 
-	fmt.Println("Server is running on port 3000")
-	http.ListenAndServe(":3000", router)
+	fmt.Println("Server is running on port " + PORT)
+	http.ListenAndServe(":"+PORT, router)
 }
 
-func imageUpload(responseWriter http.ResponseWriter, request *http.Request) {
-	err := request.ParseMultipartForm(MAX_BYTE_SIZE)
-
-	// Wuh oh file too big!
-	if err != nil {
-		color.RedString(err.Error())
+func imageUpload(w http.ResponseWriter, request *http.Request) {
+	fileTooBigErr := request.ParseMultipartForm(MAX_BYTE_SIZE)
+	if fileTooBigErr != nil {
+		logAndWriteError(w, fileTooBigErr, http.StatusRequestEntityTooLarge)
+		return
 	}
 
 	// What IS "file" here?
-	file, partHeader, _ := request.FormFile("file")
-	fileName := partHeader.Filename
-	defer file.Close()
+	imageFile, fileHeader, formFileErr := request.FormFile("file")
+	if formFileErr != nil {
+		logAndWriteError(w, formFileErr, http.StatusInternalServerError)
+		return
+	}
 
-	// Load the Shared AWS Configuration (~/.aws/config)
-	cfg, _ := config.LoadDefaultConfig(context.TODO())
-	client := s3.NewFromConfig(cfg)
+	fileName := fileHeader.Filename
+	defer imageFile.Close()
 
-	_, s3Err := client.PutObject(context.TODO(), &s3.PutObjectInput{
+	s3Client, s3ClientErr := createS3Client()
+	if s3ClientErr != nil {
+		logAndWriteError(w, s3ClientErr, http.StatusInternalServerError)
+		return
+	}
+
+	_, s3OpErr := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket: aws.String("hwot-bayrn"),
 		Key:    aws.String(fileName),
-		Body:   file,
+		Body:   imageFile,
 	})
 
-	if s3Err != nil {
-		fmt.Println(err.Error())
+	if s3OpErr != nil {
+		logAndWriteError(w, s3OpErr, http.StatusInternalServerError)
+	} else {
+		log.Println(color.HiGreenString("** Images were uploaded successfully **"))
 	}
+}
+
+func logAndWriteError(w http.ResponseWriter, err error, httpStatus int) {
+	logError(err)
+	w.WriteHeader(httpStatus)
+	w.Write([]byte(err.Error()))
+}
+
+func createS3Client() (*s3.Client, error) {
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	client := s3.NewFromConfig(cfg)
+
+	return client, err
+}
+
+func logError(err error) {
+	log.Println(color.RedString(err.Error()))
 }
