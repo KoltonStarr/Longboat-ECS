@@ -12,6 +12,7 @@ If you want to run the server in a docker container then first build the contain
 
 ## Testing The Routes
 ```curl -X POST -H "Content-Type: multipart/form-data" -F "file=@<relative path to an image file>" -v http://localhost:3000/images```
+```curl http://localhost:8080/images/{fileName}```
 
 ## Production
 There is evidently no need to do any sort of credential management when running this container on AWS ECS. The AWS SDK golang code that instantiates a new s3 client 
