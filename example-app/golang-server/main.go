@@ -1,12 +1,5 @@
 package main
 
-/*
-Note:
-From what I have read in the AWS docs I might not have to do anything at all in order for my client S3 instantiation to work.
-The LoadDefaulConfig function is apparently smart enough to use the IAM role of the ECS task that is running my container.
-The only thing I need to confirm is that the IAM role of the task has the right permissions to actually write to my bucket.
-*/
-
 import (
 	// What does this native package do?
 
@@ -16,14 +9,16 @@ import (
 	"log"
 	"net/http"
 
+	"os"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/fatih/color"
 	"github.com/go-chi/chi/v5"
 )
 
-// TODO: Finish the GET route.
 // TODO: Implements tests!
 // TODO: Figure out how to do all of this with CloudFormation.
 // TODO: Turn this into an HTTPS server and figure out how that works.
@@ -64,9 +59,7 @@ func getImageHandler(w http.ResponseWriter, r *http.Request) {
 		logAndWriteError(w, err, http.StatusInternalServerError)
 		return
 	}
-	// body here is a ReadCloser which essentially encapsulates a data source. In this case... the underlying data is going to be raw
-	// binary data that represents the image I just got from S3. It isn't as simple as JSON. It is actual binary data.
-	// To do something with it I need to read it into a slice of bytes.
+
 	body := output.Body
 	defer body.Close()
 	imageData, _ := io.ReadAll(body)
@@ -119,7 +112,17 @@ func logAndWriteError(w http.ResponseWriter, err error, httpStatus int) {
 }
 
 func createS3Client() (*s3.Client, error) {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+	accessKeyID := os.Getenv("AWS_ACCESS_KEY_ID")
+	secretAccessKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	region := os.Getenv("AWS_REGION")
+
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region), config.WithCredentialsProvider(credentials.StaticCredentialsProvider{
+		Value: aws.Credentials{
+			AccessKeyID:     accessKeyID,
+			SecretAccessKey: secretAccessKey,
+		},
+	}))
+
 	client := s3.NewFromConfig(cfg)
 
 	return client, err
